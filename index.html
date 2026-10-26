@@ -189,6 +189,23 @@ td.tot{font-weight:700}
 #rcText{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);font:inherit;font-size:16px;resize:vertical}
 #rcResult{color:var(--ink)}
 #rcResult b{color:var(--ai)}
+.fabs{position:fixed;right:calc(18px + env(safe-area-inset-right,0px));bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:20;display:flex;gap:10px;align-items:center}
+.fabs .fab{position:static}
+.fab2{border:1px solid var(--ai);border-radius:24px;padding:11px 16px;background:var(--paper);color:var(--ai);font-weight:700;font-size:14px;box-shadow:0 4px 12px rgba(20,40,70,.15)}
+.brows{display:flex;flex-direction:column;gap:10px}
+.brow{border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px;background:var(--paper)}
+.brow.bad{border-color:var(--out)}
+.brow .bh{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:var(--muted)}
+.brow .bh .src{font-size:10px;padding:1px 6px;border-radius:8px;background:var(--ai-soft);color:var(--ai);margin-left:6px}
+.brow .bx{width:30px;height:30px;border:0;background:none;border-radius:6px;color:var(--out);font-size:16px}
+.brow .g2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.brow input,.brow select{width:100%;min-width:0;padding:9px 10px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);font:inherit;font-size:16px}
+.brow .yen input{padding-left:24px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700}
+.bfoot{position:sticky;bottom:calc(-18px - env(safe-area-inset-bottom,0px));background:var(--paper);border-top:1px solid var(--line);padding:12px 0 calc(4px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:8px}
+.bfoot .bsum{display:flex;justify-content:space-between;font-size:14px}
+#bText{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);font:inherit;font-size:16px}
+.upd{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13px;background:var(--ai);color:var(--paper);border-radius:10px;padding:10px 12px;flex-wrap:wrap}
+.upd button{background:var(--paper);color:var(--ai);border:0;border-radius:8px;padding:6px 12px;font-weight:700;font-size:13px}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -204,6 +221,8 @@ td.tot{font-weight:700}
     </div>
     <button id="openSet" class="setbtn" aria-label="設定"><svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="10" cy="17" r="2" fill="none" stroke="currentColor" stroke-width="2"/></svg>設定</button>
   </header>
+
+  <div id="upd" class="upd" hidden><span>新しい版が届きました</span><button id="updBtn">開き直す</button></div>
 
   <div id="samplebar" class="sample-bar" hidden>
     <span>表示中の一部はサンプルです（「例」の印つき）</span>
@@ -245,7 +264,7 @@ td.tot{font-weight:700}
   <section id="v-bud" class="sec" hidden></section>
 </div>
 
-<button class="fab" id="fab">＋ 記入</button>
+<div class="fabs"><button class="fab2" id="fabBulk">まとめて記入</button><button class="fab" id="fab">＋ 記入</button></div>
 
 <div class="scrim" id="scrim" hidden></div>
 <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden>
@@ -350,6 +369,35 @@ td.tot{font-weight:700}
         <button type="button" class="btn ghost" id="bkNo">やめる</button>
         <button type="button" class="btn danger" id="bkYes" style="background:var(--out);color:var(--paper)">置き換える</button>
       </div>
+      <p class="note" style="margin:0">アプリのバージョン：3（2026年10月26日）</p>
+    </div>
+  </form>
+</div>
+<div class="sheet" id="bsheet" role="dialog" aria-modal="true" aria-labelledby="bsheetTitle" hidden>
+  <form id="bform" novalidate>
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h2 id="bsheetTitle" style="font-family:var(--display);margin:0;font-size:19px">まとめて記入</h2>
+      <button type="button" class="btn ghost" id="bclose" style="padding:6px 12px">閉じる</button>
+    </div>
+    <div class="field">
+      <button type="button" class="btn ghost" id="bPaste">レシートを貼り付けて1行追加</button>
+      <textarea id="bText" rows="2" placeholder="うまくいかないときは、ここを長押しして「ペースト」" aria-label="レシートの文字"></textarea>
+      <p class="hint" style="margin:0">レシートを写して文字認識の「すべてをコピー」→ 上のボタン。1枚ごとに1行増えます。手で入れる行は下の「＋ 行を追加」から。</p>
+    </div>
+    <div class="brows" id="brows"></div>
+    <button type="button" class="btn add" id="bAdd">＋ 行を追加</button>
+    <div class="bfoot">
+      <div class="bsum"><span id="bCount">0件</span><span class="num" id="bTotal"></span></div>
+      <div id="berr" class="err" hidden></div>
+      <div class="actions">
+        <button type="button" class="btn ghost" id="bClear">全部消す</button>
+        <button type="submit" class="btn" id="bSave">まとめて保存</button>
+      </div>
+      <div id="bClearConfirm" class="actions" hidden>
+        <span style="flex-basis:100%;font-size:13px">入力中の行を全部消しますか？</span>
+        <button type="button" class="btn ghost" id="bClearNo">やめる</button>
+        <button type="button" class="btn danger" id="bClearYes" style="background:var(--out);color:var(--paper)">消す</button>
+      </div>
     </div>
   </form>
 </div>
@@ -417,6 +465,7 @@ const store={ok:true,
   async saveLists(l){lists=l;applyLists();this.local();render()},
   async putAcc(a){const i=accounts.findIndex(x=>x.id===a.id);if(i>=0)accounts[i]=a;else accounts.push(a);this.local();render()},
   async delAcc(id){accounts=accounts.filter(x=>x.id!==id);this.local();render()},
+  async putMany(list){list.forEach(e=>entries.push(e));this.local();render()},
   async put(e){const i=entries.findIndex(x=>x.id===e.id);if(i>=0)entries[i]=e;else entries.push(e);this.local();render()},
   async del(id){entries=entries.filter(x=>x.id!==id);this.local();render()},
   async saveBudget(b){budget=b;this.local();render()}
@@ -930,6 +979,105 @@ $("sform").onsubmit=async ev=>{
   finally{$("ssave").disabled=false}
 };
 
+/* ---------- まとめて記入 (bulk entry) ---------- */
+let brows=[];   // rows being typed; kept while the app is open, even if the sheet is closed
+const bNew=(o={})=>{
+  const last=brows[brows.length-1];
+  const t=today();
+  return {k:"r"+Math.random().toString(36).slice(2,9),type:"out",cat:foodCat()||OUT_CATS[0]?.[0]||"",food:"",
+    account:last?last.account:(accounts.some(a=>a.id===lsGet("kakeibo-lastacc"))?lsGet("kakeibo-lastacc"):""),
+    date:last?last.date:(t.startsWith(mk())?t:mk()+"-01"),amount:0,memo:"",src:"",...o};
+};
+function bCatOptions(r){
+  const opt=(type,c)=>'<option value="'+type+"|"+esc(c)+'"'+(r.type===type&&r.cat===c?" selected":"")+">"+esc(c)+"</option>";
+  let outs=OUT_CATS.map(c=>c[0]),ins=IN_CATS.map(c=>c[0]);
+  if(r.type==="out"&&r.cat&&!outs.includes(r.cat))outs=outs.concat([r.cat]);
+  if(r.type==="in"&&r.cat&&!ins.includes(r.cat))ins=ins.concat([r.cat]);
+  return '<optgroup label="支出">'+outs.map(c=>opt("out",c)).join("")+'</optgroup><optgroup label="収入">'+ins.map(c=>opt("in",c)).join("")+"</optgroup>";
+}
+function bRowHtml(r,i){
+  const showFood=r.type==="out"&&r.cat===foodCat()&&FOOD.length>0;
+  const accSel=accounts.length?'<select data-f="account" aria-label="口座"><option value="">口座：指定なし</option>'+sortedAccs().map(a=>'<option value="'+a.id+'"'+(a.id===r.account?" selected":"")+">"+esc(a.name)+"</option>").join("")+"</select>":"";
+  const foods=r.food&&!FOOD.includes(r.food)?FOOD.concat([r.food]):FOOD;
+  return '<div class="brow" data-k="'+r.k+'"><div class="bh"><span>'+(i+1)+"行目"+(r.src?'<span class="src">レシート</span>':"")+'</span><button type="button" class="bx" data-rm="'+r.k+'" aria-label="'+(i+1)+'行目を消す">×</button></div>'+
+    '<div class="g2"><input type="date" data-f="date" value="'+r.date+'" aria-label="日付"><div class="yen"><input data-f="amount" inputmode="numeric" placeholder="金額" value="'+(r.amount?r.amount.toLocaleString("ja-JP"):"")+'" aria-label="金額"></div></div>'+
+    '<div class="g2"><select data-f="cat" aria-label="カテゴリ">'+bCatOptions(r)+"</select>"+(accSel||'<input data-f="memo" placeholder="メモ（店名など）" value="'+esc(r.memo)+'" aria-label="メモ">')+"</div>"+
+    (showFood?'<select data-f="food" aria-label="食費の内訳"><option value="">内訳：指定なし</option>'+foods.map(f=>'<option'+(f===r.food?" selected":"")+">"+esc(f)+"</option>").join("")+"</select>":"")+
+    (accSel?'<input data-f="memo" placeholder="メモ（店名など）" value="'+esc(r.memo)+'" aria-label="メモ">':"")+"</div>";
+}
+function bSum(){
+  const n=brows.filter(r=>r.amount>0).length;
+  let o=0,i=0;brows.forEach(r=>{if(r.amount>0){r.type==="in"?i+=r.amount:o+=r.amount}});
+  $("bCount").textContent=n+"件"+(brows.length>n?"（金額なし "+(brows.length-n)+"行）":"");
+  $("bTotal").textContent=(o?"支出 "+yen(o):"")+(i?"　収入 "+yen(i):"");
+}
+function bRender(){
+  const box=$("brows");
+  box.innerHTML=brows.length?brows.map(bRowHtml).join(""):'<div class="empty">行がありません。レシートを貼り付けるか「＋ 行を追加」を押してください。</div>';
+  box.querySelectorAll(".brow").forEach(el=>{
+    const r=brows.find(x=>x.k===el.dataset.k);
+    el.querySelectorAll("[data-f]").forEach(inp=>{
+      const f=inp.dataset.f;
+      if(f==="amount")inp.oninput=()=>{const n=num(inp.value);r.amount=n;inp.value=n?n.toLocaleString("ja-JP"):"";el.classList.remove("bad");bSum()};
+      else if(f==="cat")inp.onchange=()=>{const [t,...c]=inp.value.split("|");r.type=t;r.cat=c.join("|");if(!(t==="out"&&r.cat===foodCat()))r.food="";bRender();bSum()};
+      else inp.oninput=inp.onchange=()=>{r[f]=inp.value};
+    });
+  });
+  box.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{brows=brows.filter(x=>x.k!==b.dataset.rm);bRender();bSum()});
+  bSum();
+}
+function openBulk(){
+  if(!brows.length)brows.push(bNew());
+  $("berr").hidden=true;$("bClearConfirm").hidden=true;$("bText").value="";
+  bRender();$("bsheet").hidden=false;$("scrim").hidden=false;
+}
+function closeBulk(){$("bsheet").hidden=true;$("scrim").hidden=true}
+function bAddReceipt(text){
+  const r=parseReceipt(text);
+  if(!r.amount&&!r.date&&!r.store){$("berr").textContent="レシートの文字が見つかりませんでした。文字認識で「すべてをコピー」してから、もう一度お試しください。";$("berr").hidden=false;return}
+  const row=bNew({src:"receipt",amount:r.amount||0,memo:r.store||""});
+  if(r.date)row.date=r.date;
+  if(r.guess){row.type="out";row.cat=r.guess.cat;row.food=r.guess.food||"";if(r.guess.account&&accounts.some(a=>a.id===r.guess.account))row.account=r.guess.account}
+  // replace a still-empty first row instead of leaving it behind
+  if(brows.length===1&&!brows[0].amount&&!brows[0].memo&&!brows[0].src)brows=[];
+  brows.push(row);$("bText").value="";$("berr").hidden=true;bRender();
+  toast(r.amount?brows.length+"行目に追加しました（"+yen(r.amount)+"）":"金額が読み取れませんでした。"+brows.length+"行目に手で入れてください");
+  setTimeout(()=>{const el=$("brows").lastElementChild;if(el)el.scrollIntoView({block:"nearest",behavior:"smooth"})},30);
+}
+$("fabBulk").onclick=openBulk;$("bclose").onclick=closeBulk;
+$("scrim").addEventListener("click",()=>{if(!$("bsheet").hidden)closeBulk()});
+document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("bsheet").hidden)closeBulk()});
+$("bAdd").onclick=()=>{brows.push(bNew());bRender();setTimeout(()=>{const el=$("brows").lastElementChild;if(el){el.scrollIntoView({block:"nearest",behavior:"smooth"});const a=el.querySelector('[data-f="amount"]');a&&a.focus()}},30)};
+$("bPaste").onclick=async()=>{
+  const typed=$("bText").value.trim();if(typed){bAddReceipt(typed);return}
+  try{if(navigator.clipboard&&navigator.clipboard.readText){const t=await navigator.clipboard.readText();if(t&&t.trim()){bAddReceipt(t);return}}}catch(e){}
+  $("berr").textContent="貼り付けられませんでした。下の枠を長押しして「ペースト」してください。";$("berr").hidden=false;$("bText").focus();
+};
+$("bText").addEventListener("paste",()=>setTimeout(()=>{const t=$("bText").value.trim();if(t)bAddReceipt(t)},0));
+$("bClear").onclick=()=>{$("bClearConfirm").hidden=false};
+$("bClearNo").onclick=()=>{$("bClearConfirm").hidden=true};
+$("bClearYes").onclick=()=>{brows=[bNew()];$("bClearConfirm").hidden=true;bRender()};
+$("bform").onsubmit=async ev=>{
+  ev.preventDefault();
+  const err=s=>{$("berr").textContent=s;$("berr").hidden=false};
+  const touched=r=>r.amount>0||r.memo.trim()||r.src;
+  const rows=brows.filter(touched);
+  document.querySelectorAll(".brow").forEach(el=>el.classList.remove("bad"));
+  const bad=rows.filter(r=>!(r.amount>0)||!r.date);
+  if(bad.length){bad.forEach(r=>{const el=document.querySelector('.brow[data-k="'+r.k+'"]');el&&el.classList.add("bad")});
+    const idx=bad.map(r=>brows.indexOf(r)+1);return err(idx.join("・")+"行目に金額か日付がありません。入れるか、×で消してください。")}
+  if(!rows.length)return err("保存する行がありません。金額を入れてください。");
+  const now=new Date().toISOString();
+  const recs=rows.map(r=>({id:newId(),type:r.type,amount:r.amount,cat:r.cat,food:(r.type==="out"&&r.cat===foodCat())?r.food:"",account:r.account||"",date:r.date,memo:r.memo.trim(),createdAt:now}));
+  $("bSave").disabled=true;
+  try{
+    await store.putMany(recs);
+    const lastAcc=rows[rows.length-1].account;if(lastAcc)lsSet("kakeibo-lastacc",lastAcc);
+    brows=[];closeBulk();toast(recs.length+"件を記録しました");
+  }catch(e){err("保存できませんでした。もう一度お試しください")}
+  finally{$("bSave").disabled=false}
+};
+
 /* ---------- backup ---------- */
 let bkPending=null;
 $("bkSave").onclick=()=>{
@@ -960,7 +1108,17 @@ document.querySelectorAll(".tabs button").forEach(b=>b.onclick=()=>{tab=b.datase
 let tt;function toast(s){const t=$("toast");t.textContent=s;t.hidden=false;clearTimeout(tt);tt=setTimeout(()=>t.hidden=true,2200)}
 
 store.init();
-if("serviceWorker" in navigator&&location.protocol==="https:"){navigator.serviceWorker.register("sw.js").catch(()=>{})}
+/* ---------- app updates ---------- */
+if("serviceWorker" in navigator&&location.protocol==="https:"){
+  let hadController=!!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener("controllerchange",()=>{if(hadController)$("upd").hidden=false;hadController=true});
+  navigator.serviceWorker.register("sw.js").then(reg=>{
+    const check=()=>reg.update().catch(()=>{});
+    check();
+    document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")check()});
+  }).catch(()=>{});
+}
+$("updBtn").onclick=()=>location.reload();
 </script>
 </body>
 </html>
