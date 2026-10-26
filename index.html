@@ -186,6 +186,9 @@ td.tot{font-weight:700}
 .addrow{display:grid;grid-template-columns:1fr auto;gap:8px}
 .addrow input,select{padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);font:inherit;min-width:0}
 .field .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#rcText{width:100%;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--paper);color:var(--ink);font:inherit;font-size:16px;resize:vertical}
+#rcResult{color:var(--ink)}
+#rcResult b{color:var(--ai)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
@@ -250,6 +253,15 @@ td.tot{font-weight:700}
     <div style="display:flex;justify-content:space-between;align-items:center">
       <h2 id="sheetTitle" style="font-family:var(--display);margin:0;font-size:19px">記入する</h2>
       <button type="button" class="btn ghost" id="close" style="padding:6px 12px">閉じる</button>
+    </div>
+    <div id="rcBox" class="field">
+      <button type="button" class="btn ghost" id="rcOpen">レシートから入力</button>
+      <div id="rcPanel" class="field" hidden>
+        <p class="hint" style="margin:0">カメラ（または写真アプリ）でレシートを写し、右下の文字認識ボタン →「すべてをコピー」。そのあと下のボタンを押すと、合計金額・日付・店名を入れます。</p>
+        <button type="button" class="btn" id="rcPaste">貼り付けて読み取る</button>
+        <textarea id="rcText" rows="3" placeholder="うまくいかないときは、ここを長押しして「ペースト」" aria-label="レシートの文字"></textarea>
+      </div>
+      <div id="rcResult" class="hint" hidden></div>
     </div>
     <div class="seg">
       <button type="button" class="o" id="tOut" aria-pressed="true">支出</button>
@@ -595,6 +607,96 @@ function renderBud(list){
 }
 const num=s=>{const n=parseInt(String(s).replace(/[^\d]/g,""),10);return isNaN(n)?0:n};
 
+/* ---------- receipt text (from iPhone Live Text) ---------- */
+const RC_SUPER=["イオン","AEON","西友","ライフ","イトーヨーカドー","ヨーカドー","マルエツ","オーケー","OKストア","業務スーパー","サミット","ヤオコー","ベルク","いなげや","東急ストア","成城石井","マックスバリュ","まいばすけっと","コープ","生協","COOP","ロピア","トライアル","西松屋","ダイエー","阪急オアシス","ライフコーポレーション","フレスコ","平和堂","アピタ","ピアゴ","サンエー","カスミ","オオゼキ","肉のハナマサ","スーパー"];
+const RC_CONV=["セブン","7-ELEVEN","ローソン","LAWSON","ファミリーマート","FamilyMart","ミニストップ","デイリーヤマザキ","セイコーマート","NewDays"];
+const RC_DRUG=["マツモトキヨシ","マツキヨ","ウエルシア","スギ薬局","ツルハ","ココカラファイン","サンドラッグ","クリエイト","コスモス","カワチ","ドラッグ","薬局"];
+const RC_CAFE=["スターバックス","STARBUCKS","ドトール","タリーズ","コメダ","カフェ","CAFE","珈琲"];
+const RC_EAT=["マクドナルド","モスバーガー","すき家","吉野家","松屋","サイゼリヤ","ガスト","くら寿司","スシロー","SUSHIRO","はま寿司","丸亀","ココイチ","CoCo壱","ラーメン","食堂","レストラン","居酒屋","焼肉","寿司"];
+
+function rcNorm(t){
+  return String(t||"").normalize("NFKC").replace(/\r/g,"").replace(/[‐-―−ー](?=\d)/g,"-")
+    .split("\n").map(s=>s.replace(/\s+/g," ").trim()).filter(Boolean);
+}
+const RC_MONEY=/[¥\\]\s*-?\d{1,3}(?:,\d{3})+|[¥\\]\s*-?\d+|-?\d{1,3}(?:,\d{3})+\s*円?|-?\d+\s*円/g;
+function rcAmounts(line){
+  const out=[];let m;RC_MONEY.lastIndex=0;
+  while((m=RC_MONEY.exec(line))){const n=parseInt(m[0].replace(/[^\d-]/g,""),10);if(!isNaN(n)&&n>0)out.push(n)}
+  // a bare number that is the whole line (Live Text often splits label and amount)
+  if(!out.length&&/^[¥\\]?\s*\d{1,7}\s*円?$/.test(line))out.push(parseInt(line.replace(/\D/g,""),10));
+  return out;
+}
+// any number on a line we already know is about money (label lines like 合計 / お預り / お釣り)
+function rcLoose(line){
+  const out=[];const re=/\d{1,3}(?:,\d{3})+|\d+/g;let m;
+  const l=line.replace(/\d+\s*(?:点|%|個)/g,"").replace(/\d{1,2}:\d{2}/g,"");
+  while((m=re.exec(l))){const n=parseInt(m[0].replace(/,/g,""),10);if(n>0)out.push(n)}
+  return out;
+}
+const RC_SKIP=/小計|対象|税|点|預|釣|ポイント|残高|値引|割引|割戻|TEL|電話|No\.|登録番号|会員/i;
+function rcTotal(L){
+  const keys=[/総合計/,/合\s*計/,/お買上|お買い上げ|御買上/,/ご請求|お支払|支払金額|お会計|領収金額/,/^計\b|^計\s/];
+  for(const k of keys){
+    for(let i=0;i<L.length;i++){
+      if(!k.test(L[i])||(/小計/.test(L[i])&&!/合計/.test(L[i]))||/対象|内税|消費税|点数|ポイント/.test(L[i]))continue;
+      const a=rcLoose(L[i]);
+      if(a.length)return a[a.length-1];
+      for(let j=i+1;j<=Math.min(i+2,L.length-1);j++){if(RC_SKIP.test(L[j]))break;const b=rcAmounts(L[j]);if(b.length)return b[0]}
+    }
+  }
+  // cash: tendered − change
+  let dep=null,chg=null;
+  L.forEach((l,i)=>{const a=rcLoose(l).length?rcLoose(l):rcAmounts(L[i+1]||"");
+    if(/預/.test(l)&&a.length&&dep==null)dep=a[a.length-1];
+    if(/釣/.test(l)&&a.length&&chg==null)chg=a[a.length-1]});
+  if(dep!=null&&chg!=null&&dep>chg)return dep-chg;
+  // largest money-looking value on an ordinary line
+  let best=0;L.forEach(l=>{if(RC_SKIP.test(l)||/\d{1,2}:\d{2}/.test(l))return;if(!/[¥\\円,]/.test(l))return;rcAmounts(l).forEach(n=>{if(n<10000000&&n>best)best=n})});
+  return best||null;
+}
+function rcDate(L){
+  const ok=(y,m,d)=>{if(m<1||m>12||d<1||d>31)return null;const s=y+"-"+String(m).padStart(2,"0")+"-"+String(d).padStart(2,"0");
+    const t=new Date(s+"T00:00:00");if(isNaN(t)||t.getDate()!==d)return null;
+    const now=Date.now();if(t-now>2*864e5||now-t>3*365*864e5)return null;return s};
+  for(const l of L){
+    let m=l.match(/(20\d{2})\s*[年/.\-]\s*(\d{1,2})\s*[月/.\-]\s*(\d{1,2})/);if(m){const r=ok(+m[1],+m[2],+m[3]);if(r)return r}
+    m=l.match(/(?:令和|R)\s*(\d{1,2}|元)\s*[年/.\-]\s*(\d{1,2})\s*[月/.\-]\s*(\d{1,2})/);if(m){const r=ok(2018+(m[1]==="元"?1:+m[1]),+m[2],+m[3]);if(r)return r}
+    m=l.match(/(?:^|\D)(\d{2})[/.\-](\d{1,2})[/.\-](\d{1,2})(?:\D|$)/);if(m){const r=ok(2000+(+m[1]),+m[2],+m[3]);if(r)return r}
+  }
+  return null;
+}
+function rcStore(L){
+  const bad=/領収|レシート|receipt|いらっしゃ|ありがと|毎度|お客様|TEL|電話|〒|http|www|登録番号|担当|レジ|責|No\.|合計|小計|税|点|預|釣|^[\d\s:\/\-.,¥\\円()]+$/i;
+  const addr=/[都道府県].{0,6}[市区町村郡]|丁目|番地/;
+  for(const l of L.slice(0,8)){
+    if(bad.test(l)||addr.test(l))continue;
+    if((l.match(/\d/g)||[]).length>=4)continue;
+    if(l.length<2||l.length>30)continue;
+    return l.replace(/^[【\[(（]+|[】\])）]+$/g,"").trim();
+  }
+  return "";
+}
+function rcGuess(store,text){
+  // 1) same shop as an earlier record → reuse what you chose then
+  if(store){const prev=entries.filter(e=>e.type==="out"&&e.memo===store).sort((a,b)=>(b.date||"").localeCompare(a.date||""))[0];
+    if(prev&&OUT_CATS.some(c=>c[0]===prev.cat))return {cat:prev.cat,food:prev.food||"",account:prev.account||""}}
+  const hay=(store+"\n"+text).toUpperCase(),has=a=>a.some(k=>hay.includes(k.toUpperCase()));
+  const fc=foodCat(),f=n=>FOOD.includes(n)?n:"",cat=n=>OUT_CATS.some(c=>c[0]===n)?n:"";
+  if(has(RC_DRUG)&&cat("日用品"))return {cat:"日用品",food:""};
+  if(fc){
+    if(has(RC_CAFE))return {cat:fc,food:f("カフェ・おやつ")};
+    if(has(RC_EAT))return {cat:fc,food:f("外食")};
+    if(has(RC_SUPER))return {cat:fc,food:f("自炊の食材")};
+    if(has(RC_CONV))return {cat:fc,food:""};
+  }
+  return null;
+}
+function parseReceipt(text){
+  const L=rcNorm(text);
+  const store=rcStore(L);
+  return {amount:rcTotal(L),date:rcDate(L),store,guess:rcGuess(store,L.join("\n"))};
+}
+
 /* ---------- sheet ---------- */
 let editing=null,fType="out",fCat="食費",fFood="",fAcc="",fFrom="",fTo="";
 function lsGet(k){try{return localStorage.getItem(k)||""}catch(e){return""}}
@@ -643,6 +745,7 @@ function openSheet(e){
   $("memo").value=e?.memo||"";
   $("sheetTitle").textContent=e?"記録を直す":"記入する";
   $("del").hidden=!e;$("delConfirm").hidden=true;$("ferr").hidden=true;
+  $("rcBox").hidden=!!e;$("rcPanel").hidden=true;$("rcResult").hidden=true;$("rcText").value="";
   chips();$("sheet").hidden=false;$("scrim").hidden=false;
   setTimeout(()=>$("amount").focus(),50);
 }
@@ -650,6 +753,27 @@ function closeSheet(){$("sheet").hidden=true;$("scrim").hidden=true;editing=null
 $("fab").onclick=()=>openSheet();$("close").onclick=closeSheet;$("scrim").onclick=closeSheet;
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!$("sheet").hidden)closeSheet()});
 $("tOut").onclick=()=>{fType="out";chips()};$("tIn").onclick=()=>{fType="in";chips()};$("tMv").onclick=()=>{fType="move";chips()};
+function applyReceipt(text){
+  const r=parseReceipt(text),box=$("rcResult");
+  if(!r.amount&&!r.date&&!r.store){box.textContent="レシートの文字が見つかりませんでした。文字認識で「すべてをコピー」してから、もう一度お試しください。";box.hidden=false;return}
+  fType="out";
+  if(r.amount)$("amount").value=r.amount.toLocaleString("ja-JP");
+  if(r.date)$("date").value=r.date;
+  if(r.store)$("memo").value=r.store;
+  if(r.guess){fCat=r.guess.cat;fFood=r.guess.food||"";if(r.guess.account&&accounts.some(a=>a.id===r.guess.account))fAcc=r.guess.account}
+  chips();
+  $("rcText").value="";$("rcPanel").hidden=true;
+  const parts=[r.amount?"合計 <b>"+yen(r.amount)+"</b>":"",r.date?r.date.replace(/-/g,"/"):"",r.store?esc(r.store):"",r.guess?esc(r.guess.cat)+(r.guess.food?"（"+esc(r.guess.food)+"）":""):""].filter(Boolean);
+  box.innerHTML="読み取り：<span class=\"num\">"+parts.join("・")+"</span><br>"+(r.amount?"金額が合っているか確かめてから保存してください。":"合計金額が見つからなかったので、金額は手で入れてください。");
+  box.hidden=false;
+}
+$("rcOpen").onclick=()=>{$("rcPanel").hidden=!$("rcPanel").hidden;$("rcResult").hidden=true};
+$("rcPaste").onclick=async()=>{
+  const typed=$("rcText").value.trim();if(typed){applyReceipt(typed);return}
+  try{if(navigator.clipboard&&navigator.clipboard.readText){const t=await navigator.clipboard.readText();if(t&&t.trim()){applyReceipt(t);return}}}catch(e){}
+  $("rcResult").textContent="貼り付けられませんでした。下の枠を長押しして「ペースト」してください。";$("rcResult").hidden=false;$("rcText").focus();
+};
+$("rcText").addEventListener("paste",()=>setTimeout(()=>{const t=$("rcText").value.trim();if(t)applyReceipt(t)},0));
 $("amount").oninput=e=>{const n=num(e.target.value);e.target.value=n?n.toLocaleString("ja-JP"):""};
 $("form").onsubmit=async ev=>{
   ev.preventDefault();
