@@ -403,7 +403,7 @@ td.tot{font-weight:700}
         <button type="button" class="btn ghost" id="bkNo">やめる</button>
         <button type="button" class="btn danger" id="bkYes" style="background:var(--out);color:var(--paper)">置き換える</button>
       </div>
-      <p class="note" style="margin:0">アプリのバージョン：5（2026年10月27日）</p>
+      <p class="note" style="margin:0">アプリのバージョン：6（2026年10月27日）</p>
     </div>
   </form>
 </div>
@@ -440,9 +440,9 @@ td.tot{font-weight:700}
 <script>
 const PALETTE=["#D9822B","#8E7CC3","#5B7FA6","#3AA0A8","#6C8EBF","#4E9A6B","#D16A8A","#C27BB8","#E0A930","#B5654A","#7A9A3A","#5F6F8F","#2D7A57","#C2452D","#8C948F"];
 const DEFAULT_LISTS={
-  out:[["食費","#D9822B",1],["日用品","#8E7CC3"],["住居","#5B7FA6"],["水道光熱","#3AA0A8"],["通信","#6C8EBF"],["交通","#4E9A6B"],["医療","#D16A8A"],["衣服・美容","#C27BB8"],["趣味・娯楽","#E0A930"],["交際","#B5654A"],["教育","#7A9A3A"],["保険","#5F6F8F"],["その他","#8C948F"]].map(([n,c,f])=>f?{n,c,food:true}:{n,c}),
+  out:[["食費","#D9822B",1],["外食","#C2452D"],["日用品","#8E7CC3"],["住居","#5B7FA6"],["水道光熱","#3AA0A8"],["通信","#6C8EBF"],["交通","#4E9A6B"],["医療","#D16A8A"],["衣服・美容","#C27BB8"],["趣味・娯楽","#E0A930"],["交際","#B5654A"],["教育","#7A9A3A"],["保険","#5F6F8F"],["その他","#8C948F"]].map(([n,c,f])=>f?{n,c,food:true}:{n,c}),
   in:[["給与","#2D7A57"],["副業","#3AA0A8"],["その他収入","#7A9A3A"]].map(([n,c])=>({n,c})),
-  food:[["自炊の食材","#4E9A6B"],["娯楽","#D9822B"],["お惣菜・弁当","#E0A930"],["カフェ・おやつ","#C27BB8"],["飲み物・酒","#5B7FA6"]].map(([n,c])=>({n,c})),
+  food:[["自炊の食材","#4E9A6B"],["お惣菜・弁当","#E0A930"],["カフェ・おやつ","#C27BB8"],["飲み物・酒","#5B7FA6"]].map(([n,c])=>({n,c})),
   kinds:["銀行","現金","電子マネー","証券","その他"].map(n=>({n}))
 };
 let lists=JSON.parse(JSON.stringify(DEFAULT_LISTS));
@@ -489,14 +489,23 @@ const store={ok:true,
   },
   load(s){
     entries=Array.isArray(s.entries)?s.entries:[];
-    if(!s.lists||!Array.isArray(s.lists.food)){let ch=0;entries.forEach(e=>{if(e.food==="外食"){e.food="娯楽";ch++}});if(ch)this.migrated=true}
+
     budget=s.budget&&typeof s.budget==="object"?{total:s.budget.total||0,cats:{...(s.budget.cats||{})}}:{total:0,cats:{}};
     accounts=Array.isArray(s.accounts)?s.accounts:[];
     const d=s.lists||{},ok=k=>Array.isArray(d[k])&&d[k].length;
     lists={out:ok("out")?d.out:DEFAULT_LISTS.out,in:ok("in")?d.in:DEFAULT_LISTS.in,food:Array.isArray(d.food)?d.food:DEFAULT_LISTS.food,kinds:ok("kinds")?d.kinds:DEFAULT_LISTS.kinds};
     applyLists();
+    this.mig=s.mig||0;
+    if(this.mig<2){
+      // 食費の内訳「外食」（v5 では「娯楽」）→ 支出カテゴリ「外食」
+      const fcName=(lists.out.find(x=>x.food)||{}).n||"食費";
+      entries.forEach(e=>{if(e.type==="out"&&e.cat===fcName&&(e.food==="外食"||e.food==="娯楽")){e.cat="外食";e.food=""}});
+      lists={...lists,food:lists.food.filter(x=>x.n!=="外食"&&x.n!=="娯楽")};
+      if(!lists.out.some(x=>x.n==="外食")){const i=lists.out.findIndex(x=>x.food);const out=lists.out.slice();out.splice(i<0?0:i+1,0,{n:"外食",c:"#C2452D"});lists={...lists,out}}
+      applyLists();this.mig=2;this.migrated=true;
+    }
   },
-  snapshot(){return {app:"kakeibo",version:1,savedAt:new Date().toISOString(),entries,budget,accounts,lists}},
+  snapshot(){return {app:"kakeibo",version:1,mig:this.mig||2,savedAt:new Date().toISOString(),entries,budget,accounts,lists}},
   local(){localStorage.setItem(KEY,JSON.stringify(this.snapshot()))},  // throws if the browser refuses
   async saveLists(l){lists=l;applyLists();this.local();render()},
   async putAcc(a){const i=accounts.findIndex(x=>x.id===a.id);if(i>=0)accounts[i]=a;else accounts.push(a);this.local();render()},
@@ -704,13 +713,13 @@ function renderFood(list){
   const by={};FOOD.forEach(f=>by[f]=0);let none=0;food.forEach(e=>e.food?by[e.food]=(by[e.food]||0)+e.amount:none+=e.amount);
   const now=new Date(),isCur=now.getFullYear()===cur.y&&now.getMonth()+1===cur.m;
   const days=isCur?now.getDate():daysIn(cur.y,cur.m);
-  const eatOut=food.filter(e=>e.food==="娯楽");
+  const eatOut=outs.filter(e=>e.cat==="外食"),et=eatOut.reduce((a,e)=>a+e.amount,0),hasEat=OUT_CATS.some(c=>c[0]==="外食");
   const fb=budget.cats?.[fc]||0;
   let html='<h2>食費の分析</h2><div class="kpis">'+
     '<div class="kpi"><div class="lbl">食費合計</div><div class="v num">'+yen(ft)+'</div><div class="note">'+(fb?"予算 "+yen(fb)+" の "+Math.round(ft/fb*100)+"%":"食費予算は未設定")+'</div></div>'+
     '<div class="kpi"><div class="lbl">1日あたり</div><div class="v num">'+yen(ft/days)+'</div><div class="note">'+days+'日間の平均</div></div>'+
-    '<div class="kpi"><div class="lbl">支出に占める割合</div><div class="v num">'+(all?Math.round(ft/all*100):0)+'%</div><div class="note">エンゲル係数の目安</div></div>'+
-    (FOOD.includes("娯楽")?'<div class="kpi"><div class="lbl">娯楽</div><div class="v num">'+eatOut.length+'回</div><div class="note">'+(eatOut.length?"1回平均 "+yen(by["娯楽"]/eatOut.length):"今月はなし")+'</div></div>':'<div class="kpi"><div class="lbl">記録の回数</div><div class="v num">'+food.length+'回</div><div class="note">1回平均 '+yen(ft/food.length)+'</div></div>')+'</div>';
+    '<div class="kpi"><div class="lbl">支出に占める割合</div><div class="v num">'+(all?Math.round((ft+et)/all*100):0)+'%</div><div class="note">'+(hasEat?"食費＋外食（エンゲル係数の目安）":"エンゲル係数の目安")+'</div></div>'+
+    (hasEat?'<div class="kpi"><div class="lbl">外食</div><div class="v num">'+eatOut.length+'回</div><div class="note">'+(eatOut.length?"合計 "+yen(et)+"・1回平均 "+yen(et/eatOut.length):"今月はなし")+'</div></div>':'<div class="kpi"><div class="lbl">記録の回数</div><div class="v num">'+food.length+'回</div><div class="note">1回平均 '+yen(ft/food.length)+'</div></div>')+'</div>';
   const rows=FOOD.map(f=>[f,by[f],FOOD_COL[f]]);
   Object.keys(by).filter(k=>!FOOD.includes(k)&&by[k]).forEach(k=>rows.push([k,by[k],"#8C948F"]));
   if(none)rows.push(["内訳なし",none,"#8C948F"]);
@@ -720,8 +729,7 @@ function renderFood(list){
   const wk=[0,0,0,0,0];food.forEach(e=>{const d=+e.date.slice(8,10);wk[Math.min(4,Math.floor((d-1)/7))]+=e.amount});
   const wm=Math.max(1,...wk);
   html+='<h2>週ごとの食費</h2><div class="card hbar">'+wk.map((x,i)=>{const a=i*7+1,b=Math.min(daysIn(cur.y,cur.m),i===4?31:a+6);if(a>daysIn(cur.y,cur.m))return"";return'<div class="r"><div class="top"><span>'+a+"〜"+b+'日</span><span class="num">'+yen(x)+'</span></div><div class="bar"><i style="width:'+(x/wm*100)+'%"></i></div></div>'}).join("")+'</div>';
-  const home=by["自炊の食材"],eo=(by["娯楽"]||0)+(by["お惣菜・弁当"]||0);
-  if(ft&&home!=null&&by["娯楽"]!=null)html+='<p class="note">自炊の食材 '+Math.round(home/ft*100)+'% ／ 娯楽・中食 '+Math.round(eo/ft*100)+'%</p>';
+  if(hasEat&&ft+et)html+='<p class="note">食費と外食をあわせた '+yen(ft+et)+' のうち、外食は '+Math.round(et/(ft+et)*100)+'%</p>';
   v.innerHTML=html;
 }
 
@@ -821,7 +829,7 @@ function rcGuess(store,text){
   if(has(RC_DRUG)&&cat("日用品"))return {cat:"日用品",food:""};
   if(fc){
     if(has(RC_CAFE))return {cat:fc,food:f("カフェ・おやつ")};
-    if(has(RC_EAT))return {cat:fc,food:f("娯楽")};
+    if(has(RC_EAT))return cat("外食")?{cat:"外食",food:""}:{cat:fc,food:""};
     if(has(RC_SUPER))return {cat:fc,food:f("自炊の食材")};
     if(has(RC_CONV))return {cat:fc,food:""};
   }
