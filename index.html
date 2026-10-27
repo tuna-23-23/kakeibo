@@ -214,6 +214,11 @@ td.tot{font-weight:700}
 .logbar .row3{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
 .logbar .quick{display:flex;gap:6px;flex-wrap:wrap}
 .logbar .quick button{border:1px solid var(--line);background:var(--paper);border-radius:14px;padding:4px 10px;font-size:12px;color:var(--ink)}
+.day-h.cg{color:var(--ink);font-size:13px;font-weight:700;align-items:center}
+.day-h.cg>span:first-child{display:inline-flex;align-items:center;gap:6px}
+.day-h.cg .dot{display:inline-block}
+.day-h.cg .cnt{font-weight:400;color:var(--muted);font-size:12px}
+.cg-sub{font-size:12px;color:var(--muted);padding:6px 2px 2px}
 .res{display:flex;justify-content:space-between;align-items:baseline;gap:8px;flex-wrap:wrap;font-size:13px;background:var(--ai-soft);color:var(--ai);border-radius:10px;padding:8px 12px}
 .res b{font-weight:700}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
@@ -282,7 +287,7 @@ td.tot{font-weight:700}
           <button type="button" data-r="year">今年</button>
           <button type="button" data-r="clear">期間なし</button>
         </div>
-        <div class="mini-seg" role="group" aria-label="並び順"><button type="button" id="sDesc">新しい順</button><button type="button" id="sAsc">古い順</button></div>
+        <div class="mini-seg" role="group" aria-label="まとめ方"><button type="button" id="gDate">日付ごと</button><button type="button" id="gCat">カテゴリごと</button></div>
       </div>
     </div>
     <div id="logList" class="sec"></div>
@@ -398,7 +403,7 @@ td.tot{font-weight:700}
         <button type="button" class="btn ghost" id="bkNo">やめる</button>
         <button type="button" class="btn danger" id="bkYes" style="background:var(--out);color:var(--paper)">置き換える</button>
       </div>
-      <p class="note" style="margin:0">アプリのバージョン：4（2026年10月26日）</p>
+      <p class="note" style="margin:0">アプリのバージョン：5（2026年10月27日）</p>
     </div>
   </form>
 </div>
@@ -437,7 +442,7 @@ const PALETTE=["#D9822B","#8E7CC3","#5B7FA6","#3AA0A8","#6C8EBF","#4E9A6B","#D16
 const DEFAULT_LISTS={
   out:[["食費","#D9822B",1],["日用品","#8E7CC3"],["住居","#5B7FA6"],["水道光熱","#3AA0A8"],["通信","#6C8EBF"],["交通","#4E9A6B"],["医療","#D16A8A"],["衣服・美容","#C27BB8"],["趣味・娯楽","#E0A930"],["交際","#B5654A"],["教育","#7A9A3A"],["保険","#5F6F8F"],["その他","#8C948F"]].map(([n,c,f])=>f?{n,c,food:true}:{n,c}),
   in:[["給与","#2D7A57"],["副業","#3AA0A8"],["その他収入","#7A9A3A"]].map(([n,c])=>({n,c})),
-  food:[["自炊の食材","#4E9A6B"],["外食","#D9822B"],["お惣菜・弁当","#E0A930"],["カフェ・おやつ","#C27BB8"],["飲み物・酒","#5B7FA6"]].map(([n,c])=>({n,c})),
+  food:[["自炊の食材","#4E9A6B"],["娯楽","#D9822B"],["お惣菜・弁当","#E0A930"],["カフェ・おやつ","#C27BB8"],["飲み物・酒","#5B7FA6"]].map(([n,c])=>({n,c})),
   kinds:["銀行","現金","電子マネー","証券","その他"].map(n=>({n}))
 };
 let lists=JSON.parse(JSON.stringify(DEFAULT_LISTS));
@@ -475,6 +480,7 @@ const store={ok:true,
     try{
       const s=JSON.parse(localStorage.getItem(KEY)||"null");
       if(s)this.load(s);
+      if(this.migrated)this.local();
       localStorage.setItem(KEY+"-probe","1");localStorage.removeItem(KEY+"-probe");
     }catch(e){this.ok=false}
     $("nostore").hidden=this.ok;
@@ -483,6 +489,7 @@ const store={ok:true,
   },
   load(s){
     entries=Array.isArray(s.entries)?s.entries:[];
+    if(!s.lists||!Array.isArray(s.lists.food)){let ch=0;entries.forEach(e=>{if(e.food==="外食"){e.food="娯楽";ch++}});if(ch)this.migrated=true}
     budget=s.budget&&typeof s.budget==="object"?{total:s.budget.total||0,cats:{...(s.budget.cats||{})}}:{total:0,cats:{}};
     accounts=Array.isArray(s.accounts)?s.accounts:[];
     const d=s.lists||{},ok=k=>Array.isArray(d[k])&&d[k].length;
@@ -540,7 +547,7 @@ function render(){
   renderLog(list);renderSum(list);renderFood(list);renderAcc();renderBud(list);
 }
 
-let logSort=(()=>{try{return localStorage.getItem("kakeibo-sort")==="asc"?"asc":"desc"}catch(e){return"desc"}})();
+let logGroup=(()=>{try{return localStorage.getItem("kakeibo-group")==="cat"?"cat":"date"}catch(e){return"date"}})();
 const qNorm=s=>String(s||"").normalize("NFKC").toLowerCase().replace(/[,¥\\円]/g,"").trim();
 function entryHay(e){
   const d=e.date||"",[y,m,dd]=d.split("-").map(Number);
@@ -554,7 +561,7 @@ function logFilter(){
 }
 function renderLog(list){
   const v=$("logList"),f=logFilter();
-  $("sDesc").setAttribute("aria-pressed",logSort==="desc");$("sAsc").setAttribute("aria-pressed",logSort==="asc");
+  $("gDate").setAttribute("aria-pressed",logGroup==="date");$("gCat").setAttribute("aria-pressed",logGroup==="cat");
   let src=list,head="";
   if(f.active){
     const words=f.q?f.q.split(/\s+/):[];
@@ -570,20 +577,40 @@ function renderLog(list){
     head='<div class="res"><span>'+(f.q?"「"+esc($("q").value.trim())+"」・":"")+range+'</span><span class="num"><b>'+src.length+"件</b>"+(t.o?"　支出 "+yen(t.o):"")+(t.i?"　収入 "+yen(t.i):"")+"</span></div>";
     if(!src.length){v.innerHTML=head+'<div class="empty">条件に合う記録はありません。</div>';return}
   }else if(!list.length){v.innerHTML='<div class="empty">この月の記録はまだありません。<br>右下の「＋ 記入」から最初の1件を入れましょう。</div>';return}
-  const asc=logSort==="asc";
-  const by={};src.forEach(e=>(by[e.date]=by[e.date]||[]).push(e));
+  const newest=(x,y)=>(y.date||"").localeCompare(x.date||"")||String(y.createdAt||y.id).localeCompare(String(x.createdAt||x.id));
   const W="日月火水木金土",thisY=new Date().getFullYear();
-  const days=Object.keys(by).sort();if(!asc)days.reverse();
-  v.innerHTML=head+days.map(d=>{
-    const dt=new Date(d+"T00:00:00"),t=totals(by[d]);
-    const items=by[d].slice().sort((a,b)=>String(a.createdAt||a.id).localeCompare(String(b.createdAt||b.id)));if(!asc)items.reverse();
-    return '<div class="day"><div class="day-h"><span>'+(dt.getFullYear()!==thisY?dt.getFullYear()+"年":"")+(dt.getMonth()+1)+"月"+dt.getDate()+"日（"+W[dt.getDay()]+'）</span><span class="num">'+(t.o?"支出 "+yen(t.o):"")+(t.i?"　収入 "+yen(t.i):"")+"</span></div>"+
-    items.map(rowHtml).join("")+"</div>";
-  }).join("");
+  if(logGroup==="cat"){
+    const groups={};
+    src.forEach(e=>{
+      const key=e.type==="move"?"z1|振替":e.type==="adj"?"z2|残高調整":e.type+"|"+e.cat;
+      (groups[key]=groups[key]||[]).push(e);
+    });
+    const sumOf=l=>l.reduce((a,e)=>a+Math.abs(e.amount),0);
+    const rank=k=>k.startsWith("out|")?0:k.startsWith("in|")?1:2;
+    const keys=Object.keys(groups).sort((x,y)=>rank(x)-rank(y)||sumOf(groups[y])-sumOf(groups[x]));
+    v.innerHTML=head+keys.map(k=>{
+      const [t,...rest]=k.split("|"),name=rest.join("|"),items=groups[k].slice().sort(newest),total=sumOf(items);
+      const col=t==="out"||t==="in"?colOf(name):"var(--muted)";
+      let sub="";
+      if(t==="out"&&name===foodCat()){const fb={};items.forEach(e=>{const n=e.food||"内訳なし";fb[n]=(fb[n]||0)+e.amount});
+        sub='<div class="cg-sub num">'+Object.entries(fb).sort((x,y)=>y[1]-x[1]).map(([n,x])=>esc(n)+" "+yen(x)).join("・")+"</div>"}
+      return '<div class="day"><div class="day-h cg"><span><span class="dot" style="background:'+col+'"></span>'+esc(name)+(t==="in"?'<span class="tag">収入</span>':"")+'<span class="cnt">'+items.length+'件</span></span><span class="num'+(t==="in"?" in":t==="out"?" out":"")+'">'+(t==="in"?"+":t==="out"?"−":"")+yen(total)+"</span></div>"+sub+
+        items.map(e=>rowHtml(e,true)).join("")+"</div>";
+    }).join("");
+  }else{
+    const by={};src.forEach(e=>(by[e.date]=by[e.date]||[]).push(e));
+    const days=Object.keys(by).sort().reverse();
+    v.innerHTML=head+days.map(d=>{
+      const dt=new Date(d+"T00:00:00"),t=totals(by[d]);
+      const items=by[d].slice().sort(newest);
+      return '<div class="day"><div class="day-h"><span>'+(dt.getFullYear()!==thisY?dt.getFullYear()+"年":"")+(dt.getMonth()+1)+"月"+dt.getDate()+"日（"+W[dt.getDay()]+'）</span><span class="num">'+(t.o?"支出 "+yen(t.o):"")+(t.i?"　収入 "+yen(t.i):"")+"</span></div>"+
+      items.map(e=>rowHtml(e)).join("")+"</div>";
+    }).join("");
+  }
   v.querySelectorAll(".row").forEach(r=>r.onclick=()=>openSheet(entries.find(e=>e.id===r.dataset.id)));
 }
 
-function rowHtml(e){
+function rowHtml(e,withDate){
   const s=e.sample?'<span class="tag s">例</span>':"";
   let dot,title,sub,amt;
   if(e.type==="move"){dot="var(--ai)";title="振替"+s;sub=esc(accName(e.from))+" → "+esc(accName(e.to))+(e.memo?"　"+esc(e.memo):"");amt='<span class="a num">'+yen(e.amount)+"</span>"}
@@ -591,6 +618,7 @@ function rowHtml(e){
   else{dot=colOf(e.cat);title=esc(e.cat)+(e.food?'<span class="tag">'+esc(e.food)+"</span>":"")+s;
     sub=[e.account?esc(accName(e.account)):"",esc(e.memo)].filter(Boolean).join("・");
     amt='<span class="a num '+(e.type==="in"?"in":"out")+'">'+(e.type==="in"?"+":"−")+yen(e.amount)+"</span>"}
+  if(withDate===true){const [,mm,dd]=(e.date||"--").split("-");sub=(+mm)+"/"+(+dd)+(sub?"・"+sub:"")}
   return '<button class="row" data-id="'+e.id+'"><span class="dot" style="background:'+dot+'"></span><span class="t"><span class="c">'+title+'</span><div class="m">'+(sub||"&nbsp;")+"</div></span>"+amt+"</button>";
 }
 
@@ -676,13 +704,13 @@ function renderFood(list){
   const by={};FOOD.forEach(f=>by[f]=0);let none=0;food.forEach(e=>e.food?by[e.food]=(by[e.food]||0)+e.amount:none+=e.amount);
   const now=new Date(),isCur=now.getFullYear()===cur.y&&now.getMonth()+1===cur.m;
   const days=isCur?now.getDate():daysIn(cur.y,cur.m);
-  const eatOut=food.filter(e=>e.food==="外食");
+  const eatOut=food.filter(e=>e.food==="娯楽");
   const fb=budget.cats?.[fc]||0;
   let html='<h2>食費の分析</h2><div class="kpis">'+
     '<div class="kpi"><div class="lbl">食費合計</div><div class="v num">'+yen(ft)+'</div><div class="note">'+(fb?"予算 "+yen(fb)+" の "+Math.round(ft/fb*100)+"%":"食費予算は未設定")+'</div></div>'+
     '<div class="kpi"><div class="lbl">1日あたり</div><div class="v num">'+yen(ft/days)+'</div><div class="note">'+days+'日間の平均</div></div>'+
     '<div class="kpi"><div class="lbl">支出に占める割合</div><div class="v num">'+(all?Math.round(ft/all*100):0)+'%</div><div class="note">エンゲル係数の目安</div></div>'+
-    (FOOD.includes("外食")?'<div class="kpi"><div class="lbl">外食</div><div class="v num">'+eatOut.length+'回</div><div class="note">'+(eatOut.length?"1回平均 "+yen(by["外食"]/eatOut.length):"今月はなし")+'</div></div>':'<div class="kpi"><div class="lbl">記録の回数</div><div class="v num">'+food.length+'回</div><div class="note">1回平均 '+yen(ft/food.length)+'</div></div>')+'</div>';
+    (FOOD.includes("娯楽")?'<div class="kpi"><div class="lbl">娯楽</div><div class="v num">'+eatOut.length+'回</div><div class="note">'+(eatOut.length?"1回平均 "+yen(by["娯楽"]/eatOut.length):"今月はなし")+'</div></div>':'<div class="kpi"><div class="lbl">記録の回数</div><div class="v num">'+food.length+'回</div><div class="note">1回平均 '+yen(ft/food.length)+'</div></div>')+'</div>';
   const rows=FOOD.map(f=>[f,by[f],FOOD_COL[f]]);
   Object.keys(by).filter(k=>!FOOD.includes(k)&&by[k]).forEach(k=>rows.push([k,by[k],"#8C948F"]));
   if(none)rows.push(["内訳なし",none,"#8C948F"]);
@@ -692,8 +720,8 @@ function renderFood(list){
   const wk=[0,0,0,0,0];food.forEach(e=>{const d=+e.date.slice(8,10);wk[Math.min(4,Math.floor((d-1)/7))]+=e.amount});
   const wm=Math.max(1,...wk);
   html+='<h2>週ごとの食費</h2><div class="card hbar">'+wk.map((x,i)=>{const a=i*7+1,b=Math.min(daysIn(cur.y,cur.m),i===4?31:a+6);if(a>daysIn(cur.y,cur.m))return"";return'<div class="r"><div class="top"><span>'+a+"〜"+b+'日</span><span class="num">'+yen(x)+'</span></div><div class="bar"><i style="width:'+(x/wm*100)+'%"></i></div></div>'}).join("")+'</div>';
-  const home=by["自炊の食材"],eo=(by["外食"]||0)+(by["お惣菜・弁当"]||0);
-  if(ft&&home!=null&&by["外食"]!=null)html+='<p class="note">自炊の食材 '+Math.round(home/ft*100)+'% ／ 外食・中食 '+Math.round(eo/ft*100)+'%</p>';
+  const home=by["自炊の食材"],eo=(by["娯楽"]||0)+(by["お惣菜・弁当"]||0);
+  if(ft&&home!=null&&by["娯楽"]!=null)html+='<p class="note">自炊の食材 '+Math.round(home/ft*100)+'% ／ 娯楽・中食 '+Math.round(eo/ft*100)+'%</p>';
   v.innerHTML=html;
 }
 
@@ -793,7 +821,7 @@ function rcGuess(store,text){
   if(has(RC_DRUG)&&cat("日用品"))return {cat:"日用品",food:""};
   if(fc){
     if(has(RC_CAFE))return {cat:fc,food:f("カフェ・おやつ")};
-    if(has(RC_EAT))return {cat:fc,food:f("外食")};
+    if(has(RC_EAT))return {cat:fc,food:f("娯楽")};
     if(has(RC_SUPER))return {cat:fc,food:f("自炊の食材")};
     if(has(RC_CONV))return {cat:fc,food:""};
   }
@@ -1152,8 +1180,8 @@ document.querySelectorAll(".logbar .quick button").forEach(b=>b.onclick=()=>{
   else if(r==="year"){$("qFrom").value=t.slice(0,4)+"-01-01";$("qTo").value=t}
   relog();
 });
-const setSort=s=>{logSort=s;try{localStorage.setItem("kakeibo-sort",s)}catch(e){}relog()};
-$("sDesc").onclick=()=>setSort("desc");$("sAsc").onclick=()=>setSort("asc");
+const setGroup=g=>{logGroup=g;try{localStorage.setItem("kakeibo-group",g)}catch(e){}relog()};
+$("gDate").onclick=()=>setGroup("date");$("gCat").onclick=()=>setGroup("cat");
 
 /* ---------- backup ---------- */
 let bkPending=null;

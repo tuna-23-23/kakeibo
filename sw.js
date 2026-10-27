@@ -1,6 +1,6 @@
 // Keeps the app's own files on the device so it opens with no connection.
 // It never sends or receives your records: they stay in this iPhone's storage.
-const CACHE = "kakeibo-v4";
+const CACHE = "kakeibo-v5";
 const FILES = ["./", "index.html", "manifest.webmanifest", "icon-180.png", "icon-192.png", "icon-512.png"];
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES.map(f => new Request(f, { cache: "reload" })))).then(() => self.skipWaiting()));
